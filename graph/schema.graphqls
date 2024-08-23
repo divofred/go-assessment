@@ -1,0 +1,47 @@
+# GraphQL schema example
+#
+# https://gqlgen.com/getting-started/
+
+type StudentScore {
+  _id: ID!
+  name: String!
+  subject: String!
+  score: Int!
+  position: Int!
+}
+
+input Student {
+  name: String!
+  score: Int!
+}
+
+input StudentsScoreInput {
+  subject: String!
+  students: [Student!]!
+}
+
+type SubjectAssessment {
+  subject: String!
+  students: [StudentScore!]!
+}
+
+type StudentTotalScore {
+  name: String!
+  total: Int!
+  position: Int!
+}
+
+type StudentOverallResult {
+  position: Int!
+  result: [StudentScore!]!
+}
+
+type Query {
+  getSubjectAssessments(subject: String!): SubjectAssessment!
+  getStudentAssessments(name: String!): StudentOverallResult!
+  getOverallPositions: [StudentTotalScore!]!
+}
+
+type Mutation {
+  createStudentScore(input: StudentsScoreInput!): [StudentScore!]!
+}
