@@ -12,7 +12,7 @@ import (
 )
 
 // CreateStudentScore is the resolver for the createStudentScore field.
-func (r *mutationResolver) CreateStudentScore(ctx context.Context, input model.StudentsScoreInput) ([]*model.StudentScore, error) {
+func (r *mutationResolver) CreateStudentScore(ctx context.Context, input []*model.StudentsScoreInput) ([]*model.StudentTotalScore, error) {
 	return db.CreateStudentScore(input)
 }
 
@@ -24,11 +24,6 @@ func (r *queryResolver) GetSubjectAssessments(ctx context.Context, subject strin
 // GetStudentAssessments is the resolver for the getStudentAssessments field.
 func (r *queryResolver) GetStudentAssessments(ctx context.Context, name string) (*model.StudentOverallResult, error) {
 	return db.GetStudentAssessments(name)
-}
-
-// GetOverallPositions is the resolver for the getOverallPositions field.
-func (r *queryResolver) GetOverallPositions(ctx context.Context) ([]*model.StudentTotalScore, error) {
-	return db.GetOverallPositions(), nil
 }
 
 // Mutation returns MutationResolver implementation.
@@ -46,4 +41,8 @@ type queryResolver struct{ *Resolver }
 //   - When renaming or deleting a resolver the old code will be put in here. You can safely delete
 //     it when you're done.
 //   - You have helper methods in this file. Move them out to keep these resolver files clean.
+func (r *queryResolver) GetOverallPositions(ctx context.Context) ([]*model.StudentTotalScore, error) {
+	return db.GetOverallPositions(), nil
+}
+
 var db = database.Connect()

@@ -39,9 +39,8 @@ type StudentOverallResult {
 type Query {
   getSubjectAssessments(subject: String!): SubjectAssessment!
   getStudentAssessments(name: String!): StudentOverallResult!
-  getOverallPositions: [StudentTotalScore!]!
 }
 
 type Mutation {
-  createStudentScore(input: StudentsScoreInput!): [StudentScore!]!
+  createStudentScore(input: [StudentsScoreInput!]!): [StudentTotalScore!]!
 }

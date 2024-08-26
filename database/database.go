@@ -38,66 +38,80 @@ func Connect() *DB {
 	}
 }
 
-func (db *DB) CreateStudentScore(studentsScores model.StudentsScoreInput) ([]*model.StudentScore, error) {
+func (db *DB) CreateStudentScore(studentsScores []*model.StudentsScoreInput) ([]*model.StudentTotalScore, error) {
 	var studentScoreCollection = db.client.Database("go-assessment").Collection("studentScores")
 	var isUploadSubjectCollection = db.client.Database("go-assessment").Collection("isUploadSubject")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	filter := bson.M{"subject": studentsScores.Subject}
-
-	var result bson.M
-
-	err := isUploadSubjectCollection.FindOne(ctx, filter).Decode(&result)
-	if err != nil {
-		if err != mongo.ErrNoDocuments {
-
+	for _, studentScoreInput := range studentsScores {
+		// Check if the subject has already been uploaded
+		filter := bson.M{"subject": studentScoreInput.Subject}
+		var result bson.M
+		err := isUploadSubjectCollection.FindOne(ctx, filter).Decode(&result)
+		if err != nil && err != mongo.ErrNoDocuments {
 			return nil, err
 		}
-	} else {
-		return nil, errors.New("subject already uploaded")
-	}
-
-	sort.SliceStable(studentsScores.Students, func(i, j int) bool {
-		return studentsScores.Students[i].Score > studentsScores.Students[j].Score
-	})
-
-	var docs []interface{}
-	for i, score := range studentsScores.Students {
-		studentScore := &model.StudentScore{
-			ID:       primitive.NewObjectID().Hex(),
-			Name:     strings.ToTitle(score.Name),
-			Subject:  studentsScores.Subject,
-			Score:    score.Score,
-			Position: i + 1,
+		if err == nil {
+			// Skip this subject since it has already been uploaded
+			continue
 		}
 
-		docs = append(docs, studentScore)
-	}
-
-	insertResult, err := studentScoreCollection.InsertMany(ctx, docs)
-	if err != nil {
-		log.Fatal((err))
-	}
-
-	var insertedScores []*model.StudentScore
-
-	for i, id := range insertResult.InsertedIDs {
-		insertedScores = append(insertedScores, &model.StudentScore{
-			ID:       id.(primitive.ObjectID).Hex(),
-			Name:     studentsScores.Students[i].Name,
-			Subject:  studentsScores.Subject,
-			Score:    studentsScores.Students[i].Score,
-			Position: i + 1,
+		// Sort students by score in descending order
+		sort.SliceStable(studentScoreInput.Students, func(i, j int) bool {
+			return studentScoreInput.Students[i].Score > studentScoreInput.Students[j].Score
 		})
+
+		var docs []interface{}
+		for i, score := range studentScoreInput.Students {
+			studentScore := &model.StudentScore{
+				ID:       primitive.NewObjectID().Hex(),
+				Name:     strings.ToTitle(score.Name),
+				Subject:  studentScoreInput.Subject,
+				Score:    score.Score,
+				Position: i + 1,
+			}
+			docs = append(docs, studentScore)
+		}
+
+		// Insert student scores into the collection
+		_, err = studentScoreCollection.InsertMany(ctx, docs)
+		if err != nil {
+			return nil, err
+		}
+
+		if _, err = isUploadSubjectCollection.InsertOne(ctx, bson.M{"subject": studentScoreInput.Subject}); err != nil {
+			return nil, err
+		}
 	}
 
-	if _, err = isUploadSubjectCollection.InsertOne(ctx, bson.M{"subject": studentsScores.Subject}); err != nil {
+	cursor, err := studentScoreCollection.Find(ctx, bson.D{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer cursor.Close(ctx)
+
+	var studentScores []model.StudentScore
+
+	for cursor.Next(ctx) {
+		var score model.StudentScore
+		if err := cursor.Decode(&score); err != nil {
+			log.Fatal(err)
+		}
+		studentScores = append(studentScores, score)
+	}
+
+	if err := cursor.Err(); err != nil {
 		log.Fatal(err)
 	}
 
-	return insertedScores, nil
+	totalScores := aggregateScores(studentScores)
+	sortedScores := sortByTotalScore(totalScores)
+	positions := assignPositions(sortedScores)
+	db.storeOverAllPositions(positions)
+
+	return positions, nil
 }
 
 func (db *DB) GetSubjectAssessments(subject string) *model.SubjectAssessment {
@@ -248,8 +262,18 @@ func (db *DB) storeOverAllPositions(positions []*model.StudentTotalScore) {
 		docs = append(docs, doc)
 	}
 
-	_, _ = studentTotalScoreCollection.InsertMany(ctx, docs)
+	for _, doc := range docs {
+		filter := bson.M{"name": doc.(bson.M)["name"], "subject": doc.(bson.M)["subject"]}
 
+		update := bson.M{
+			"$set": doc,
+		}
+
+		_, err := studentTotalScoreCollection.UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
 }
 
 func aggregateScores(scores []model.StudentScore) map[string]int {
@@ -266,6 +290,7 @@ func sortByTotalScore(totalScores map[string]int) []*model.StudentTotalScore {
 	var sortedScores []*model.StudentTotalScore
 
 	for name, total := range totalScores {
+		println("Total Scores: ", name, total)
 		sortedScores = append(sortedScores, &model.StudentTotalScore{Name: name, Total: total})
 	}
 
